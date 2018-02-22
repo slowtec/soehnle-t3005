@@ -1,0 +1,8 @@
+[package]
+name = "soehnle-t3005"
+version = "0.0.0"
+authors = ["Markus Kohlhase <markus.kohlhase@slowtec.de>"]
+license = "MIT/Apache-2.0"
+description = "SOEHNLE Terminal 3005 library"
+
+[dependencies]
