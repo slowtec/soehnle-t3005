@@ -4,19 +4,51 @@
 use std::io::{Error, ErrorKind, Result};
 use std::str::FromStr;
 
+/// A message received from the terminal.
 #[derive(Debug, Clone)]
 pub struct Message {
     pub status: Status,
-    pub nr: u8,
+    pub id: u8,
     pub value: f32,
 }
 
+/// Balance status.
 #[derive(Debug, Clone)]
 pub struct Status {
     pub under_load: bool,
     pub over_load: bool,
     pub standstill: bool,
     pub empty_message: bool,
+}
+
+impl FromStr for Message {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self> {
+        let s = s.trim();
+        if (s.len() > 27) || (s.len() < 7) {
+            return Err(Error::new(ErrorKind::InvalidData, "Invalid message length"));
+        }
+        if !s.is_ascii() {
+            return Err(Error::new(ErrorKind::InvalidData, "None-ASCII str"));
+        }
+        let (status, tail) = s.split_at(4);
+        let (id, netto) = tail.split_at(2);
+        let v = netto
+            .replace("N", "")
+            .replace("kg", "")
+            .replace(" ", "")
+            .replace(",", ".");
+
+        Ok(Message {
+            status: Status::from_str(status)?,
+            id: id.replace("W", "")
+                .parse()
+                .map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid balance ID"))?,
+            value: v.trim()
+                .parse()
+                .map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid balance ID"))?,
+        })
+    }
 }
 
 impl FromStr for Status {
@@ -57,6 +89,45 @@ fn bool_from_str(s: &str) -> Result<bool> {
 mod tests {
 
     use super::*;
+
+    #[test]
+    fn parse_value_from_message() {
+        assert_eq!(
+            Message::from_str("000101N        3,1 kg").unwrap().value,
+            3.1
+        );
+        assert_eq!(
+            Message::from_str("000101N    -   3,7 kg").unwrap().value,
+            -3.7
+        );
+        assert_eq!(
+            Message::from_str("000101N       -3,9 kg").unwrap().value,
+            -3.9
+        );
+        assert_eq!(
+            Message::from_str("000000N 0123456,78kg").unwrap().value,
+            123456.78
+        );
+    }
+
+    #[test]
+    fn parse_id_from_message() {
+        assert!(Message::from_str("0000XXN    -1000,0 kg").is_err());
+
+        assert_eq!(Message::from_str("000003N    -1000,0 kg").unwrap().id, 3);
+        assert_eq!(Message::from_str("000000N    -1000,0 kg").unwrap().id, 0);
+        assert_eq!(Message::from_str("000099N    -1000,0 kg").unwrap().id, 99);
+        assert_eq!(Message::from_str("0000W9N    -1000,0 kg").unwrap().id, 9);
+    }
+
+    #[test]
+    fn parse_message_from_bad_str() {
+        assert!(Message::from_str("").is_err());
+        assert!(Message::from_str("Foo x").is_err());
+        assert!(Message::from_str("0000W1").is_err());
+        assert!(Message::from_str("None Sense").is_err());
+        assert!(Message::from_str("000�ۿ3,9 kg").is_err());
+    }
 
     #[test]
     fn parse_bool_str() {
