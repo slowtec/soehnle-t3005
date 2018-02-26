@@ -5,7 +5,7 @@ use std::io::{Error, ErrorKind, Result};
 use std::str::FromStr;
 
 /// A message received from the terminal.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Message {
     pub status: Status,
     pub id: u8,
@@ -13,7 +13,7 @@ pub struct Message {
 }
 
 /// Balance status.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Status {
     pub under_load: bool,
     pub over_load: bool,
@@ -22,7 +22,7 @@ pub struct Status {
 }
 
 /// Balance command
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     Tare,
     ClearTare,
