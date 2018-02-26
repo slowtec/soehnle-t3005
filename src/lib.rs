@@ -4,7 +4,8 @@
 use std::io::{Error, ErrorKind, Result};
 use std::str::FromStr;
 
-/// A message received from the terminal.
+/// A message received from the terminal
+/// (at the moment only `30XX EDV Standard` is supported).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Message {
     pub status: Status,
@@ -31,6 +32,16 @@ pub enum Command {
 
 /// Balance command with ACK
 pub struct CommandWithAck(Command);
+
+/// Balance query command
+#[derive(Debug, Clone, PartialEq)]
+pub enum Query {
+    Once,
+    OnceOnChange,
+}
+
+/// Balance query with ACK
+pub struct QueryWithAck(Query);
 
 pub trait ToAsciiString {
     fn to_ascii_string(&self) -> Result<String>;
@@ -71,6 +82,34 @@ impl ToAsciiString for CommandWithAck {
                 }
                 format!("<t{:07}>", val)
             }
+        };
+        Ok(string)
+    }
+}
+
+impl Query {
+    pub fn with_ack(self) -> QueryWithAck {
+        QueryWithAck(self)
+    }
+}
+
+impl ToAsciiString for Query {
+    fn to_ascii_string(&self) -> Result<String> {
+        use self::Query::*;
+        let string = match *self {
+            Once => "<A>".into(),
+            OnceOnChange => "<B>".into(),
+        };
+        Ok(string)
+    }
+}
+
+impl ToAsciiString for QueryWithAck {
+    fn to_ascii_string(&self) -> Result<String> {
+        use self::Query::*;
+        let string = match self.0 {
+            Once => "<a>".into(),
+            OnceOnChange => "<b>".into(),
         };
         Ok(string)
     }
@@ -281,6 +320,21 @@ mod tests {
                 .with_ack()
                 .to_ascii_string()
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn query_to_ascii_string() {
+        assert_eq!(Query::Once.to_ascii_string().unwrap(), "<A>");
+        assert_eq!(Query::OnceOnChange.to_ascii_string().unwrap(), "<B>");
+    }
+
+    #[test]
+    fn query_with_ack_to_ascii_string() {
+        assert_eq!(Query::Once.with_ack().to_ascii_string().unwrap(), "<a>");
+        assert_eq!(
+            Query::OnceOnChange.with_ack().to_ascii_string().unwrap(),
+            "<b>"
         );
     }
 }
