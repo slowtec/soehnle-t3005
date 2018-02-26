@@ -30,8 +30,8 @@ pub enum Command {
     SetTare(u32),
 }
 
-/// Balance command with ACK
-pub struct CommandWithAck(Command);
+/// Command or Query with ACK
+pub struct WithAck<T>(T);
 
 /// Balance query command
 #[derive(Debug, Clone, PartialEq)]
@@ -40,16 +40,13 @@ pub enum Query {
     OnceOnChange,
 }
 
-/// Balance query with ACK
-pub struct QueryWithAck(Query);
-
 pub trait ToAsciiString {
     fn to_ascii_string(&self) -> Result<String>;
 }
 
 impl Command {
-    pub fn with_ack(self) -> CommandWithAck {
-        CommandWithAck(self)
+    pub fn with_ack(self) -> WithAck<Command> {
+        WithAck(self)
     }
 }
 
@@ -70,7 +67,7 @@ impl ToAsciiString for Command {
     }
 }
 
-impl ToAsciiString for CommandWithAck {
+impl ToAsciiString for WithAck<Command> {
     fn to_ascii_string(&self) -> Result<String> {
         use self::Command::*;
         let string = match self.0 {
@@ -88,8 +85,8 @@ impl ToAsciiString for CommandWithAck {
 }
 
 impl Query {
-    pub fn with_ack(self) -> QueryWithAck {
-        QueryWithAck(self)
+    pub fn with_ack(self) -> WithAck<Query> {
+        WithAck(self)
     }
 }
 
@@ -104,7 +101,7 @@ impl ToAsciiString for Query {
     }
 }
 
-impl ToAsciiString for QueryWithAck {
+impl ToAsciiString for WithAck<Query> {
     fn to_ascii_string(&self) -> Result<String> {
         use self::Query::*;
         let string = match self.0 {
