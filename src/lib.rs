@@ -21,6 +21,61 @@ pub struct Status {
     pub empty_message: bool,
 }
 
+/// Balance command
+#[derive(Debug, Clone)]
+pub enum Command {
+    Tare,
+    ClearTare,
+    SetTare(u32),
+}
+
+/// Balance command with ACK
+pub struct CommandWithAck(Command);
+
+pub trait ToAsciiString {
+    fn to_ascii_string(&self) -> Result<String>;
+}
+
+impl Command {
+    pub fn with_ack(self) -> CommandWithAck {
+        CommandWithAck(self)
+    }
+}
+
+impl ToAsciiString for Command {
+    fn to_ascii_string(&self) -> Result<String> {
+        use self::Command::*;
+        let string = match *self {
+            Tare => "<T>".into(),
+            ClearTare => "<TC>".into(),
+            SetTare(val) => {
+                if val > 9999999 {
+                    return Err(Error::new(ErrorKind::InvalidInput, "Invalid tare value"));
+                }
+                format!("<T{:07}>", val)
+            }
+        };
+        Ok(string)
+    }
+}
+
+impl ToAsciiString for CommandWithAck {
+    fn to_ascii_string(&self) -> Result<String> {
+        use self::Command::*;
+        let string = match self.0 {
+            Tare => "<t>".into(),
+            ClearTare => "<tC>".into(),
+            SetTare(val) => {
+                if val > 9999999 {
+                    return Err(Error::new(ErrorKind::InvalidInput, "Invalid tare value"));
+                }
+                format!("<t{:07}>", val)
+            }
+        };
+        Ok(string)
+    }
+}
+
 impl FromStr for Message {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self> {
@@ -178,5 +233,54 @@ mod tests {
         assert!(Status::from_str("").is_err());
         assert!(Status::from_str("� ").is_err());
         assert!(Status::from_str("�ۿ�").is_err());
+    }
+
+    #[test]
+    fn command_to_ascii_string() {
+        assert_eq!(Command::Tare.to_ascii_string().unwrap(), "<T>");
+        assert_eq!(Command::ClearTare.to_ascii_string().unwrap(), "<TC>");
+        assert_eq!(Command::SetTare(0).to_ascii_string().unwrap(), "<T0000000>");
+        assert_eq!(
+            Command::SetTare(9999999).to_ascii_string().unwrap(),
+            "<T9999999>"
+        );
+        assert_eq!(
+            Command::SetTare(1234567).to_ascii_string().unwrap(),
+            "<T1234567>"
+        );
+        assert!(Command::SetTare(99999999).to_ascii_string().is_err());
+    }
+
+    #[test]
+    fn command_with_ack_to_ascii_string() {
+        assert_eq!(Command::Tare.with_ack().to_ascii_string().unwrap(), "<t>");
+        assert_eq!(
+            Command::ClearTare.with_ack().to_ascii_string().unwrap(),
+            "<tC>"
+        );
+        assert_eq!(
+            Command::SetTare(0).with_ack().to_ascii_string().unwrap(),
+            "<t0000000>"
+        );
+        assert_eq!(
+            Command::SetTare(9999999)
+                .with_ack()
+                .to_ascii_string()
+                .unwrap(),
+            "<t9999999>"
+        );
+        assert_eq!(
+            Command::SetTare(1234567)
+                .with_ack()
+                .to_ascii_string()
+                .unwrap(),
+            "<t1234567>"
+        );
+        assert!(
+            Command::SetTare(99999999)
+                .with_ack()
+                .to_ascii_string()
+                .is_err()
+        );
     }
 }
