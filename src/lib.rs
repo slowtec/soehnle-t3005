@@ -4,6 +4,9 @@
 use std::io::{Error, ErrorKind, Result};
 use std::str::FromStr;
 
+const ACK: u8 = 0x06;
+const NAK: u8 = 0x15;
+
 /// A message received from the terminal
 /// (at the moment only `30XX EDV Standard` is supported).
 #[derive(Debug, Clone, PartialEq)]
@@ -11,6 +14,14 @@ pub struct Message {
     pub status: Status,
     pub id: u8,
     pub value: f32,
+}
+
+/// A Command/Query response.
+#[derive(Debug, Clone, PartialEq)]
+enum Response {
+    Ack,
+    Nak,
+    Message(Message),
 }
 
 /// Balance status.
@@ -132,13 +143,33 @@ impl FromStr for Message {
 
         Ok(Message {
             status: Status::from_str(status)?,
-            id: id.replace("W", "")
+            id: id
+                .replace("W", "")
                 .parse()
                 .map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid balance ID"))?,
-            value: v.trim()
+            value: v
+                .trim()
                 .parse()
                 .map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid balance ID"))?,
         })
+    }
+}
+
+impl FromStr for Response {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self> {
+        let s = s.trim();
+        if s.len() < 1 {
+            return Err(Error::new(ErrorKind::InvalidData, "Invalid message length"));
+        }
+        if s.as_bytes()[0] == ACK {
+            return Ok(Response::Ack);
+        }
+        if s.as_bytes()[0] == NAK {
+            return Ok(Response::Nak);
+        }
+        let msg = Message::from_str(s)?;
+        Ok(Response::Message(msg))
     }
 }
 
@@ -199,6 +230,10 @@ mod tests {
             Message::from_str("000000N 0123456,78kg").unwrap().value,
             123456.78
         );
+        assert_eq!(
+            Message::from_str("001101N     -0,001 kg ").unwrap().value,
+            -0.001
+        );
     }
 
     #[test]
@@ -218,6 +253,32 @@ mod tests {
         assert!(Message::from_str("0000W1").is_err());
         assert!(Message::from_str("None Sense").is_err());
         assert!(Message::from_str("000�ۿ3,9 kg").is_err());
+    }
+
+    #[test]
+    fn parse_response() {
+        assert!(Response::from_str("").is_err());
+        assert_eq!(
+            Response::from_str(::std::str::from_utf8(&[0x06]).unwrap()).unwrap(),
+            Response::Ack
+        );
+        assert_eq!(
+            Response::from_str(::std::str::from_utf8(&[0x15]).unwrap()).unwrap(),
+            Response::Nak
+        );
+        assert_eq!(
+            Response::from_str("0000W9N    -1000,0 kg").unwrap(),
+            Response::Message(Message {
+                id: 9,
+                status: Status {
+                    empty_message: false,
+                    over_load: false,
+                    under_load: false,
+                    standstill: false,
+                },
+                value: -1000.0
+            })
+        );
     }
 
     #[test]
