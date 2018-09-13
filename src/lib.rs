@@ -9,7 +9,7 @@ const NAK: u8 = 0x15;
 
 /// A message received from the terminal
 /// (at the moment only `30XX EDV Standard` is supported).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Message {
     pub status: Status,
     pub id: u8,
@@ -17,7 +17,7 @@ pub struct Message {
 }
 
 /// A Command/Query response.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum Response {
     Ack,
     Nak,
@@ -25,7 +25,7 @@ enum Response {
 }
 
 /// Balance status.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Status {
     pub under_load: bool,
     pub over_load: bool,
@@ -34,7 +34,7 @@ pub struct Status {
 }
 
 /// Balance command
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Command {
     Tare,
     ClearTare,
@@ -45,7 +45,7 @@ pub enum Command {
 pub struct WithAck<T>(T);
 
 /// Balance query command
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Query {
     Once,
     OnceOnChange,
