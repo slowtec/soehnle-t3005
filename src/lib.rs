@@ -1,8 +1,7 @@
 //! A rust library to communicate with the
 //! SOEHNLE Terminal 3005 (via RS232).
 
-use std::io::{Error, ErrorKind, Result};
-use std::str::FromStr;
+use std::{fmt, str::FromStr};
 
 const ACK: u8 = 0x06;
 const NAK: u8 = 0x15;
@@ -41,6 +40,34 @@ pub enum Command {
     SetTare(u32),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Error {
+    TareValue,
+    MessageLength,
+    NonAsciiStr,
+    BalanceId,
+    BalanceValue,
+    ParseBoolean,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::Error::*;
+        match *self {
+            TareValue => write!(f, "Invalid tare value"),
+            MessageLength => write!(f, "Invalid message length"),
+            NonAsciiStr => write!(f, "Non-ASCII str"),
+            BalanceId => write!(f, "Invalid balance ID"),
+            BalanceValue => write!(f, "Invalid balance value"),
+            ParseBoolean => write!(f, "Could not parse boolen"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
+
+type Result<T> = std::result::Result<T, Error>;
+
 /// Command or Query with ACK
 pub struct WithAck<T>(T);
 
@@ -61,6 +88,8 @@ impl Command {
     }
 }
 
+const MAX_TARE_VALUE: u32 = 9_999_999;
+
 impl ToAsciiString for Command {
     fn to_ascii_string(&self) -> Result<String> {
         use self::Command::*;
@@ -68,8 +97,8 @@ impl ToAsciiString for Command {
             Tare => "<T>".into(),
             ClearTare => "<TC>".into(),
             SetTare(val) => {
-                if val > 9999999 {
-                    return Err(Error::new(ErrorKind::InvalidInput, "Invalid tare value"));
+                if val > MAX_TARE_VALUE {
+                    return Err(Error::TareValue);
                 }
                 format!("<T{:07}>", val)
             }
@@ -78,6 +107,7 @@ impl ToAsciiString for Command {
     }
 }
 
+//TODO: merge with "Command" impl
 impl ToAsciiString for WithAck<Command> {
     fn to_ascii_string(&self) -> Result<String> {
         use self::Command::*;
@@ -85,8 +115,8 @@ impl ToAsciiString for WithAck<Command> {
             Tare => "<t>".into(),
             ClearTare => "<tC>".into(),
             SetTare(val) => {
-                if val > 9999999 {
-                    return Err(Error::new(ErrorKind::InvalidInput, "Invalid tare value"));
+                if val > MAX_TARE_VALUE {
+                    return Err(Error::TareValue);
                 }
                 format!("<t{:07}>", val)
             }
@@ -128,10 +158,10 @@ impl FromStr for Message {
     fn from_str(s: &str) -> Result<Self> {
         let s = s.trim();
         if (s.len() > 27) || (s.len() < 7) {
-            return Err(Error::new(ErrorKind::InvalidData, "Invalid message length"));
+            return Err(Error::MessageLength);
         }
         if !s.is_ascii() {
-            return Err(Error::new(ErrorKind::InvalidData, "None-ASCII str"));
+            return Err(Error::NonAsciiStr);
         }
         let (status, tail) = s.split_at(4);
         let (id, netto) = tail.split_at(2);
@@ -143,14 +173,8 @@ impl FromStr for Message {
 
         Ok(Message {
             status: Status::from_str(status)?,
-            id: id
-                .replace("W", "")
-                .parse()
-                .map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid balance ID"))?,
-            value: v
-                .trim()
-                .parse()
-                .map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid balance ID"))?,
+            id: id.replace("W", "").parse().map_err(|_| Error::BalanceId)?,
+            value: v.trim().parse().map_err(|_| Error::BalanceValue)?,
         })
     }
 }
@@ -159,8 +183,8 @@ impl FromStr for Response {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self> {
         let s = s.trim();
-        if s.len() < 1 {
-            return Err(Error::new(ErrorKind::InvalidData, "Invalid message length"));
+        if s.is_empty() {
+            return Err(Error::MessageLength);
         }
         if s.as_bytes()[0] == ACK {
             return Ok(Response::Ack);
@@ -177,10 +201,10 @@ impl FromStr for Status {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self> {
         if s.len() != 4 {
-            return Err(Error::new(ErrorKind::InvalidData, "Invalid message length"));
+            return Err(Error::MessageLength);
         }
         if !s.is_ascii() {
-            return Err(Error::new(ErrorKind::InvalidData, "Non-ASCII str"));
+            return Err(Error::NonAsciiStr);
         }
         let (under_load, tail) = s.split_at(1);
         let (over_load, tail) = tail.split_at(1);
@@ -200,10 +224,7 @@ fn bool_from_str(s: &str) -> Result<bool> {
     match s {
         "1" => Ok(true),
         "0" => Ok(false),
-        _ => Err(Error::new(
-            ErrorKind::InvalidData,
-            "Could not parse boolean",
-        )),
+        _ => Err(Error::ParseBoolean),
     }
 }
 
@@ -373,12 +394,10 @@ mod tests {
                 .unwrap(),
             "<t1234567>"
         );
-        assert!(
-            Command::SetTare(99999999)
-                .with_ack()
-                .to_ascii_string()
-                .is_err()
-        );
+        assert!(Command::SetTare(99999999)
+            .with_ack()
+            .to_ascii_string()
+            .is_err());
     }
 
     #[test]
