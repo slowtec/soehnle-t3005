@@ -1,7 +1,9 @@
 //! A rust library to communicate with the
 //! SOEHNLE Terminal 3005 (via RS232).
 
-use std::{fmt, str::FromStr};
+use std::str::FromStr;
+
+use thiserror::Error;
 
 const ACK: u8 = 0x06;
 const NAK: u8 = 0x15;
@@ -24,6 +26,8 @@ enum Response {
 }
 
 /// Balance status.
+// TODO: use enum
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Status {
     pub under_load: bool,
@@ -40,31 +44,21 @@ pub enum Command {
     SetTare(u32),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Error)]
 pub enum Error {
+    #[error("Invalid tare value")]
     TareValue,
+    #[error("Invalid message length")]
     MessageLength,
+    #[error("Non-ASCII str")]
     NonAsciiStr,
+    #[error("Invalid balance ID")]
     BalanceId,
+    #[error("Invalid balance value")]
     BalanceValue,
+    #[error("Could not parse boolen")]
     ParseBoolean,
 }
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use self::Error::*;
-        match *self {
-            TareValue => write!(f, "Invalid tare value"),
-            MessageLength => write!(f, "Invalid message length"),
-            NonAsciiStr => write!(f, "Non-ASCII str"),
-            BalanceId => write!(f, "Invalid balance ID"),
-            BalanceValue => write!(f, "Invalid balance value"),
-            ParseBoolean => write!(f, "Could not parse boolen"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -83,7 +77,8 @@ pub trait ToAsciiString {
 }
 
 impl Command {
-    pub fn with_ack(self) -> WithAck<Command> {
+    #[must_use]
+    pub const fn with_ack(self) -> WithAck<Command> {
         WithAck(self)
     }
 }
@@ -92,15 +87,14 @@ const MAX_TARE_VALUE: u32 = 9_999_999;
 
 impl ToAsciiString for Command {
     fn to_ascii_string(&self) -> Result<String> {
-        use self::Command::*;
         let string = match *self {
-            Tare => "<T>".into(),
-            ClearTare => "<TC>".into(),
-            SetTare(val) => {
+            Self::Tare => "<T>".into(),
+            Self::ClearTare => "<TC>".into(),
+            Self::SetTare(val) => {
                 if val > MAX_TARE_VALUE {
                     return Err(Error::TareValue);
                 }
-                format!("<T{:07}>", val)
+                format!("<T{val:07}>")
             }
         };
         Ok(string)
@@ -110,15 +104,14 @@ impl ToAsciiString for Command {
 //TODO: merge with "Command" impl
 impl ToAsciiString for WithAck<Command> {
     fn to_ascii_string(&self) -> Result<String> {
-        use self::Command::*;
         let string = match self.0 {
-            Tare => "<t>".into(),
-            ClearTare => "<tC>".into(),
-            SetTare(val) => {
+            Command::Tare => "<t>".into(),
+            Command::ClearTare => "<tC>".into(),
+            Command::SetTare(val) => {
                 if val > MAX_TARE_VALUE {
                     return Err(Error::TareValue);
                 }
-                format!("<t{:07}>", val)
+                format!("<t{val:07}>")
             }
         };
         Ok(string)
@@ -126,17 +119,17 @@ impl ToAsciiString for WithAck<Command> {
 }
 
 impl Query {
-    pub fn with_ack(self) -> WithAck<Query> {
+    #[must_use]
+    pub const fn with_ack(self) -> WithAck<Query> {
         WithAck(self)
     }
 }
 
 impl ToAsciiString for Query {
     fn to_ascii_string(&self) -> Result<String> {
-        use self::Query::*;
         let string = match *self {
-            Once => "<A>".into(),
-            OnceOnChange => "<B>".into(),
+            Query::Once => "<A>".into(),
+            Query::OnceOnChange => "<B>".into(),
         };
         Ok(string)
     }
@@ -144,10 +137,9 @@ impl ToAsciiString for Query {
 
 impl ToAsciiString for WithAck<Query> {
     fn to_ascii_string(&self) -> Result<String> {
-        use self::Query::*;
         let string = match self.0 {
-            Once => "<a>".into(),
-            OnceOnChange => "<b>".into(),
+            Query::Once => "<a>".into(),
+            Query::OnceOnChange => "<b>".into(),
         };
         Ok(string)
     }
@@ -166,14 +158,14 @@ impl FromStr for Message {
         let (status, tail) = s.split_at(4);
         let (id, netto) = tail.split_at(2);
         let v = netto
-            .replace("N", "")
+            .replace('N', "")
             .replace("kg", "")
-            .replace(" ", "")
-            .replace(",", ".");
+            .replace(' ', "")
+            .replace(',', ".");
 
         Ok(Message {
             status: Status::from_str(status)?,
-            id: id.replace("W", "").parse().map_err(|_| Error::BalanceId)?,
+            id: id.replace('W', "").parse().map_err(|_| Error::BalanceId)?,
             value: v.trim().parse().map_err(|_| Error::BalanceValue)?,
         })
     }
@@ -249,7 +241,7 @@ mod tests {
         );
         assert_eq!(
             Message::from_str("000000N 0123456,78kg").unwrap().value,
-            123456.78
+            123_456.78
         );
         assert_eq!(
             Message::from_str("001101N     -0,001 kg ").unwrap().value,
@@ -304,8 +296,8 @@ mod tests {
 
     #[test]
     fn parse_bool_str() {
-        assert_eq!(bool_from_str("1").unwrap(), true);
-        assert_eq!(bool_from_str("0").unwrap(), false);
+        assert!(bool_from_str("1").unwrap());
+        assert!(!bool_from_str("0").unwrap());
         assert!(bool_from_str("").is_err());
         assert!(bool_from_str("x").is_err());
         assert!(bool_from_str("o").is_err());
@@ -316,34 +308,34 @@ mod tests {
     #[test]
     fn parse_status() {
         let s = Status::from_str("0000").unwrap();
-        assert_eq!(s.under_load, false);
-        assert_eq!(s.over_load, false);
-        assert_eq!(s.standstill, false);
-        assert_eq!(s.empty_message, false);
+        assert!(!s.under_load);
+        assert!(!s.over_load);
+        assert!(!s.standstill);
+        assert!(!s.empty_message);
 
         let s = Status::from_str("1000").unwrap();
-        assert_eq!(s.under_load, true);
-        assert_eq!(s.over_load, false);
-        assert_eq!(s.standstill, false);
-        assert_eq!(s.empty_message, false);
+        assert!(s.under_load);
+        assert!(!s.over_load);
+        assert!(!s.standstill);
+        assert!(!s.empty_message);
 
         let s = Status::from_str("0100").unwrap();
-        assert_eq!(s.under_load, false);
-        assert_eq!(s.over_load, true);
-        assert_eq!(s.standstill, false);
-        assert_eq!(s.empty_message, false);
+        assert!(!s.under_load);
+        assert!(s.over_load);
+        assert!(!s.standstill);
+        assert!(!s.empty_message);
 
         let s = Status::from_str("0010").unwrap();
-        assert_eq!(s.under_load, false);
-        assert_eq!(s.over_load, false);
-        assert_eq!(s.standstill, true);
-        assert_eq!(s.empty_message, false);
+        assert!(!s.under_load);
+        assert!(!s.over_load);
+        assert!(s.standstill);
+        assert!(!s.empty_message);
 
         let s = Status::from_str("0001").unwrap();
-        assert_eq!(s.under_load, false);
-        assert_eq!(s.over_load, false);
-        assert_eq!(s.standstill, false);
-        assert_eq!(s.empty_message, true);
+        assert!(!s.under_load);
+        assert!(!s.over_load);
+        assert!(!s.standstill);
+        assert!(s.empty_message);
     }
 
     #[test]
@@ -359,14 +351,14 @@ mod tests {
         assert_eq!(Command::ClearTare.to_ascii_string().unwrap(), "<TC>");
         assert_eq!(Command::SetTare(0).to_ascii_string().unwrap(), "<T0000000>");
         assert_eq!(
-            Command::SetTare(9999999).to_ascii_string().unwrap(),
+            Command::SetTare(9_999_999).to_ascii_string().unwrap(),
             "<T9999999>"
         );
         assert_eq!(
-            Command::SetTare(1234567).to_ascii_string().unwrap(),
+            Command::SetTare(1_234_567).to_ascii_string().unwrap(),
             "<T1234567>"
         );
-        assert!(Command::SetTare(99999999).to_ascii_string().is_err());
+        assert!(Command::SetTare(99_999_999).to_ascii_string().is_err());
     }
 
     #[test]
@@ -381,20 +373,20 @@ mod tests {
             "<t0000000>"
         );
         assert_eq!(
-            Command::SetTare(9999999)
+            Command::SetTare(9_999_999)
                 .with_ack()
                 .to_ascii_string()
                 .unwrap(),
             "<t9999999>"
         );
         assert_eq!(
-            Command::SetTare(1234567)
+            Command::SetTare(1_234_567)
                 .with_ack()
                 .to_ascii_string()
                 .unwrap(),
             "<t1234567>"
         );
-        assert!(Command::SetTare(99999999)
+        assert!(Command::SetTare(99_999_999)
             .with_ack()
             .to_ascii_string()
             .is_err());
